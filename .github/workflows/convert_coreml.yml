@@ -50,7 +50,7 @@ jobs:
         id: convert
         run: |
           MODEL="${{ steps.check_model.outputs.model_path }}"
-          python -c "
+          cat > /tmp/convert.py << 'EOF'
 import coremltools as ct
 import sys
 
@@ -86,7 +86,8 @@ for out in m.graph.output:
     shape = [d.dim_value for d in out.type.tensor_type.shape.dim]
     print(f'  {out.name}: {shape} ({out.type.tensor_type.elem_type})')
 print('Conversion complete!')
-          "
+EOF
+          python /tmp/convert.py
         env:
           MODEL: ${{ steps.check_model.outputs.model_path }}
 
