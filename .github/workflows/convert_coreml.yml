@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          lfs: true  # needed if .mlmodelc is tracked via Git LFS
+          lfs: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -48,11 +48,10 @@ jobs:
 
       - name: Convert CoreML → ONNX
         id: convert
-        run: |
-          MODEL="${{ steps.check_model.outputs.model_path }}"
-          MODEL="$MODEL" python scripts/convert_coreml.py
         env:
           MODEL: ${{ steps.check_model.outputs.model_path }}
+        run: |
+          python scripts/convert_coreml.py
 
       - name: Upload ONNX artifact
         uses: actions/upload-artifact@v4
