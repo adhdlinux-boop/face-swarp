@@ -1,0 +1,104 @@
+name: Convert inswapper-512-live CoreML to ONNX
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_path:
+        description: 'Path to .mlmodelc folder in repo (or leave empty to use default)'
+        required: false
+        default: 'inswapper_live.mlmodelc'
+
+permissions:
+  contents: read
+
+jobs:
+  convert:
+    name: Convert CoreML → ONNX
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true  # needed if .mlmodelc is tracked via Git LFS
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install coremltools + onnx
+        run: |
+          python -m pip install --upgrade pip
+          pip install coremltools onnx
+
+      - name: Verify model exists
+        id: check_model
+        run: |
+          MODEL="${{ github.event.inputs.model_path }}"
+          if [ ! -d "$MODEL" ]; then
+            echo "Model directory not found: $MODEL"
+            echo "Available .mlmodelc folders:"
+            find . -name "*.mlmodelc" -type d
+            exit 1
+          fi
+          echo "model_path=$MODEL" >> $GITHUB_OUTPUT
+
+      - name: Convert CoreML → ONNX
+        id: convert
+        run: |
+          MODEL="${{ steps.check_model.outputs.model_path }}"
+          python -c "
+import coremltools as ct
+import sys
+
+print(f'Loading CoreML model from: {MODEL}')
+model = ct.models.MLModel(MODEL)
+
+print('Input descriptions:')
+for k, v in model.input_description.items():
+    print(f'  {k}: {v}')
+
+print('Output descriptions:')
+for k, v in model.output_description.items():
+    print(f'  {k}: {v}')
+
+print('Converting to ONNX...')
+onnx_model = ct.convert(model, target='onnx')
+
+output_path = 'inswapper_512_live.onnx'
+onnx_model.save(output_path)
+print(f'Saved ONNX to: {output_path}')
+
+import onnx
+m = onnx.load(output_path)
+print('ONNX model loaded successfully')
+print(f'  IR version: {m.ir_version}')
+print(f'  Opset: {m.opset_import}')
+print('Inputs:')
+for inp in m.graph.input:
+    shape = [d.dim_value for d in inp.type.tensor_type.shape.dim]
+    print(f'  {inp.name}: {shape} ({inp.type.tensor_type.elem_type})')
+print('Outputs:')
+for out in m.graph.output:
+    shape = [d.dim_value for d in out.type.tensor_type.shape.dim]
+    print(f'  {out.name}: {shape} ({out.type.tensor_type.elem_type})')
+print('Conversion complete!')
+          "
+        env:
+          MODEL: ${{ steps.check_model.outputs.model_path }}
+
+      - name: Upload ONNX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inswapper-512-live-onnx
+          path: inswapper_512_live.onnx
+          retention-days: 30
+          compression-level: 6
+
+      - name: Show file size
+        run: |
+          ls -lh inswapper_512_live.onnx
+          echo "Download from Actions artifacts after the run completes."
